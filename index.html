@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>贪吃蛇小游戏</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: "PingFang SC", "Microsoft YaHei", Arial, sans-serif;
+        display: grid;
+        place-items: center;
+        min-height: 100vh;
+        background: radial-gradient(circle at top, #263238, #111);
+        color: #f5f5f5;
+      }
+
+      .game-shell {
+        width: min(92vw, 520px);
+        padding: 16px;
+        border-radius: 14px;
+        background: rgba(0, 0, 0, 0.35);
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        backdrop-filter: blur(4px);
+      }
+
+      .title {
+        margin: 0 0 10px;
+        font-size: 24px;
+        text-align: center;
+      }
+
+      .hud {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 12px;
+        gap: 12px;
+        font-size: 15px;
+      }
+
+      #board {
+        width: 100%;
+        aspect-ratio: 1;
+        border: 2px solid rgba(255, 255, 255, 0.22);
+        border-radius: 10px;
+        background: #1b2a2f;
+        display: block;
+      }
+
+      .tips {
+        margin-top: 10px;
+        font-size: 14px;
+        line-height: 1.5;
+        opacity: 0.92;
+      }
+
+      button {
+        border: 0;
+        border-radius: 8px;
+        padding: 8px 12px;
+        font-size: 14px;
+        cursor: pointer;
+        background: #4caf50;
+        color: #fff;
+      }
+
+      button:hover {
+        background: #45a049;
+      }
+
+      @media (max-width: 420px) {
+        .hud {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="game-shell">
+      <h1 class="title">🐍 贪吃蛇</h1>
+      <section class="hud">
+        <div>
+          分数：<strong id="score">0</strong>
+          &nbsp;|&nbsp;
+          最佳：<strong id="best">0</strong>
+        </div>
+        <button id="restart" type="button">重新开始</button>
+      </section>
+      <canvas id="board" width="400" height="400" aria-label="贪吃蛇游戏画布"></canvas>
+      <p class="tips">
+        使用方向键或 WASD 控制移动。碰到墙壁或自己会结束游戏。吃到食物可以加分和变长。
+      </p>
+    </main>
+
+    <script>
+      const board = document.getElementById("board");
+      const ctx = board.getContext("2d");
+      const scoreEl = document.getElementById("score");
+      const bestEl = document.getElementById("best");
+      const restartBtn = document.getElementById("restart");
+
+      const gridSize = 20;
+      const tileCount = board.width / gridSize;
+      const baseSpeed = 125;
+
+      let snake = [];
+      let direction = { x: 1, y: 0 };
+      let nextDirection = { x: 1, y: 0 };
+      let food = { x: 10, y: 10 };
+      let score = 0;
+      let bestScore = 0;
+      let gameOver = false;
+      let tickTimer = null;
+
+      function loadBestScore() {
+        try {
+          const value = localStorage.getItem("snake-best");
+          return Number(value || 0);
+        } catch (error) {
+          return 0;
+        }
+      }
+
+      function persistBestScore(value) {
+        try {
+          localStorage.setItem("snake-best", String(value));
+        } catch (error) {
+          // localStorage 在某些隐私模式或 file:// 场景可能不可用。
+        }
+      }
+
+      bestScore = loadBestScore();
+
+      bestEl.textContent = String(bestScore);
+
+      function resetGame() {
+        snake = [
+          { x: 5, y: 10 },
+          { x: 4, y: 10 },
+          { x: 3, y: 10 },
+        ];
+        direction = { x: 1, y: 0 };
+        nextDirection = { x: 1, y: 0 };
+        score = 0;
+        gameOver = false;
+        scoreEl.textContent = "0";
+        placeFood();
+        draw();
+      }
+
+      function placeFood() {
+        let valid = false;
+        while (!valid) {
+          food = {
+            x: Math.floor(Math.random() * tileCount),
+            y: Math.floor(Math.random() * tileCount),
+          };
+          valid = !snake.some((p) => p.x === food.x && p.y === food.y);
+        }
+      }
+
+      function drawGrid() {
+        ctx.fillStyle = "#1b2a2f";
+        ctx.fillRect(0, 0, board.width, board.height);
+
+        ctx.strokeStyle = "rgba(255,255,255,0.06)";
+        for (let i = 0; i <= tileCount; i += 1) {
+          const pos = i * gridSize;
+          ctx.beginPath();
+          ctx.moveTo(pos, 0);
+          ctx.lineTo(pos, board.height);
+          ctx.stroke();
+
+          ctx.beginPath();
+          ctx.moveTo(0, pos);
+          ctx.lineTo(board.width, pos);
+          ctx.stroke();
+        }
+      }
+
+      function draw() {
+        drawGrid();
+
+        ctx.fillStyle = "#f44336";
+        ctx.beginPath();
+        ctx.arc(
+          food.x * gridSize + gridSize / 2,
+          food.y * gridSize + gridSize / 2,
+          gridSize * 0.38,
+          0,
+          Math.PI * 2
+        );
+        ctx.fill();
+
+        snake.forEach((segment, index) => {
+          ctx.fillStyle = index === 0 ? "#90ee90" : "#4caf50";
+          ctx.fillRect(
+            segment.x * gridSize + 1,
+            segment.y * gridSize + 1,
+            gridSize - 2,
+            gridSize - 2
+          );
+        });
+
+        if (gameOver) {
+          ctx.fillStyle = "rgba(0,0,0,0.58)";
+          ctx.fillRect(0, 0, board.width, board.height);
+          ctx.fillStyle = "#fff";
+          ctx.textAlign = "center";
+          ctx.font = "bold 30px sans-serif";
+          ctx.fillText("游戏结束", board.width / 2, board.height / 2 - 8);
+          ctx.font = "16px sans-serif";
+          ctx.fillText("按重新开始继续", board.width / 2, board.height / 2 + 24);
+        }
+      }
+
+      function setBestScoreIfNeeded() {
+        if (score > bestScore) {
+          bestScore = score;
+          persistBestScore(bestScore);
+          bestEl.textContent = String(bestScore);
+        }
+      }
+
+      function tick() {
+        if (gameOver) {
+          draw();
+          return;
+        }
+
+        direction = nextDirection;
+        const head = {
+          x: snake[0].x + direction.x,
+          y: snake[0].y + direction.y,
+        };
+
+        const hitsWall =
+          head.x < 0 || head.y < 0 || head.x >= tileCount || head.y >= tileCount;
+        const hitsSelf = snake.some((p) => p.x === head.x && p.y === head.y);
+
+        if (hitsWall || hitsSelf) {
+          gameOver = true;
+          setBestScoreIfNeeded();
+          draw();
+          return;
+        }
+
+        snake.unshift(head);
+
+        const ateFood = head.x === food.x && head.y === food.y;
+        if (ateFood) {
+          score += 1;
+          scoreEl.textContent = String(score);
+          placeFood();
+        } else {
+          snake.pop();
+        }
+
+        draw();
+      }
+
+      function startLoop() {
+        if (tickTimer) {
+          clearInterval(tickTimer);
+        }
+        tickTimer = setInterval(tick, baseSpeed);
+      }
+
+      function updateDirectionByKey(key) {
+        const goingUp = direction.y === -1;
+        const goingDown = direction.y === 1;
+        const goingLeft = direction.x === -1;
+        const goingRight = direction.x === 1;
+
+        if ((key === "ArrowUp" || key.toLowerCase() === "w") && !goingDown) {
+          nextDirection = { x: 0, y: -1 };
+        }
+        if ((key === "ArrowDown" || key.toLowerCase() === "s") && !goingUp) {
+          nextDirection = { x: 0, y: 1 };
+        }
+        if ((key === "ArrowLeft" || key.toLowerCase() === "a") && !goingRight) {
+          nextDirection = { x: -1, y: 0 };
+        }
+        if ((key === "ArrowRight" || key.toLowerCase() === "d") && !goingLeft) {
+          nextDirection = { x: 1, y: 0 };
+        }
+      }
+
+      window.addEventListener("keydown", (event) => {
+        const keys = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "w", "a", "s", "d", "W", "A", "S", "D"];
+        if (!keys.includes(event.key)) {
+          return;
+        }
+        event.preventDefault();
+        updateDirectionByKey(event.key);
+      });
+
+      restartBtn.addEventListener("click", () => {
+        resetGame();
+      });
+
+      resetGame();
+      startLoop();
+    </script>
+  </body>
+</html>
